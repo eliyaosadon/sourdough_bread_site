@@ -27,3 +27,6 @@ test-results/
 # misc
 *.pem
 .vercel/
+
+next-env.d.ts
+*.tsbuildinfo
