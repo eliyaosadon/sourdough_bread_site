@@ -9,7 +9,7 @@ import { clientIp, rateLimit } from "@/lib/rate-limit";
 //   LLM_API_KEY, LLM_BASE_URL, LLM_MODEL
 
 const DEFAULT_BASE_URL = "https://api.groq.com/openai/v1";
-const DEFAULT_MODEL = "llama-3.3-70b-versatile";
+const DEFAULT_MODEL = "openai/gpt-oss-20b";
 const MAX_TOOL_ROUNDS = 5;
 const MAX_MESSAGES = 20;
 const MAX_MESSAGE_LENGTH = 1000;
