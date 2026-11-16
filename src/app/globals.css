@@ -1,26 +1,30 @@
 @import "tailwindcss";
 
+/* Brand colors. Change them here and the whole site follows. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --cream: #fffaf0;
+  --parchment: #f6ead4;
+  --wheat: #e6d2ab;
+  --crust: #9a5b25;
+  --crust-dark: #5e3414;
+  --ink: #2b1d12;
+  --ink-soft: #6b5846;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-cream: var(--cream);
+  --color-parchment: var(--parchment);
+  --color-wheat: var(--wheat);
+  --color-crust: var(--crust);
+  --color-crust-dark: var(--crust-dark);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
   --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --font-serif: var(--font-fraunces);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--cream);
+  color: var(--ink);
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }

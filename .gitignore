@@ -30,3 +30,6 @@ test-results/
 
 next-env.d.ts
 *.tsbuildinfo
+
+# local order storage (temporary, before the database)
+.data/
