@@ -18,7 +18,7 @@ An online shop for handmade sourdough breads, with an AI bread advisor that help
 | Styling | Tailwind CSS |
 | Database | PostgreSQL (Prisma or Drizzle) |
 | Validation | Zod |
-| AI advisor | Claude API, called from the server only |
+| AI advisor | Any OpenAI-compatible LLM API (free tier: Groq), called from the server only |
 | Testing | Vitest (unit), Playwright (end-to-end) |
 | CI | GitHub Actions |
 | Hosting | Vercel + managed Postgres (Neon, Supabase or Railway) |

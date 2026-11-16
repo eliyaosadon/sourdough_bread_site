@@ -41,7 +41,7 @@ Mark each item when done. Each phase also lists what it teaches.
 
 ## Phase 7: AI bread advisor
 - [ ] Chat UI with streaming responses
-- [ ] Server-side Claude API calls
+- [x] Server-side LLM API calls (provider is configurable)
 - [ ] Knowledge retrieval (RAG) over bread info and FAQs
 - [ ] Tool use: look up products, check stock
 - [ ] Guardrails: stay on topic, careful allergen answers

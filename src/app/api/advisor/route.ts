@@ -1,21 +1,29 @@
 import { ADVISOR_TOOLS, SYSTEM_PROMPT, runTool } from "@/lib/advisor";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
 
-// The Claude API key stays on the server. The browser only ever talks to this route.
+// The API key stays on the server. The browser only ever talks to this route.
+//
+// This route speaks the "OpenAI-compatible" chat format, which many providers offer,
+// including free tiers (Groq, OpenRouter, Google Gemini). To switch provider you only
+// change three environment variables, not the code:
+//   LLM_API_KEY, LLM_BASE_URL, LLM_MODEL
 
-const API_URL = "https://api.anthropic.com/v1/messages";
-const DEFAULT_MODEL = "claude-haiku-5-5";
+const DEFAULT_BASE_URL = "https://api.groq.com/openai/v1";
+const DEFAULT_MODEL = "llama-3.3-70b-versatile";
 const MAX_TOOL_ROUNDS = 5;
 const MAX_MESSAGES = 20;
 const MAX_MESSAGE_LENGTH = 1000;
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
-type Block = { type: string; text?: string; id?: string; name?: string; input?: unknown };
-type ToolResult = { type: "tool_result"; tool_use_id: string; content: string };
-type ApiMessage = {
-  role: "user" | "assistant";
-  content: string | Block[] | ToolResult[];
+type ToolCall = {
+  id: string;
+  type: "function";
+  function: { name: string; arguments: string };
 };
+type ApiMessage =
+  | { role: "system" | "user"; content: string }
+  | { role: "assistant"; content: string | null; tool_calls?: ToolCall[] }
+  | { role: "tool"; tool_call_id: string; content: string };
 
 function fail(error: string, status = 400) {
   return Response.json({ error }, { status });
@@ -51,8 +59,27 @@ function parseMessages(body: unknown): ChatMessage[] | null {
   return messages;
 }
 
+function parseArguments(raw: string): unknown {
+  try {
+    return JSON.parse(raw || "{}");
+  } catch {
+    return {};
+  }
+}
+
+// The tool definitions are written once in lib/advisor.ts; here we convert them
+// to the OpenAI-compatible shape.
+const TOOLS = ADVISOR_TOOLS.map((tool) => ({
+  type: "function" as const,
+  function: {
+    name: tool.name,
+    description: tool.description,
+    parameters: tool.input_schema,
+  },
+}));
+
 export async function POST(request: Request) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.LLM_API_KEY;
   if (!apiKey) {
     return fail(
       "The bread advisor is not set up yet. Please ask the bakery directly.",
@@ -75,64 +102,79 @@ export async function POST(request: Request) {
   const chat = parseMessages(body);
   if (!chat) return fail("Invalid conversation.");
 
-  const model = process.env.ADVISOR_MODEL || DEFAULT_MODEL;
-  const conversation: ApiMessage[] = chat.map((m) => ({
-    role: m.role,
-    content: m.content,
-  }));
+  const baseUrl = (process.env.LLM_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, "");
+  const model = process.env.LLM_MODEL || DEFAULT_MODEL;
+
+  const conversation: ApiMessage[] = [
+    { role: "system", content: SYSTEM_PROMPT },
+    ...chat.map((m): ApiMessage => ({ role: m.role, content: m.content })),
+  ];
 
   try {
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-      const response = await fetch(API_URL, {
+      const response = await fetch(`${baseUrl}/chat/completions`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
+          authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
           model,
-          max_tokens: 700,
-          system: SYSTEM_PROMPT,
-          tools: ADVISOR_TOOLS,
           messages: conversation,
+          tools: TOOLS,
+          tool_choice: "auto",
+          max_tokens: 700,
+          temperature: 0.4,
         }),
         signal: AbortSignal.timeout(25_000),
       });
 
+      if (response.status === 429) {
+        // Free tiers have small limits, so this will happen sometimes.
+        return fail(
+          "The advisor is very busy right now. Please try again in a minute.",
+          503,
+        );
+      }
       if (!response.ok) {
         const details = await response.text().catch(() => "");
-        console.error("Claude API error:", response.status, details.slice(0, 500));
+        console.error("LLM API error:", response.status, details.slice(0, 500));
         return fail("The bread advisor is unavailable right now. Please try again later.", 502);
       }
 
       const data = (await response.json()) as {
-        content?: Block[];
-        stop_reason?: string;
+        choices?: {
+          message?: { content?: string | null; tool_calls?: ToolCall[] };
+        }[];
       };
-      const content = data.content ?? [];
+      const message = data.choices?.[0]?.message;
+      if (!message) {
+        return fail("The bread advisor sent an empty answer. Please try again.", 502);
+      }
 
-      if (data.stop_reason === "tool_use") {
-        const results: ToolResult[] = content
-          .filter((b) => b.type === "tool_use" && b.id && b.name)
-          .map((b) => ({
-            type: "tool_result" as const,
-            tool_use_id: b.id as string,
-            content: JSON.stringify(runTool(b.name as string, b.input)),
-          }));
-
-        conversation.push({ role: "assistant", content });
-        conversation.push({ role: "user", content: results });
+      const toolCalls = message.tool_calls ?? [];
+      if (toolCalls.length > 0) {
+        conversation.push({
+          role: "assistant",
+          content: message.content ?? null,
+          tool_calls: toolCalls,
+        });
+        for (const call of toolCalls) {
+          conversation.push({
+            role: "tool",
+            tool_call_id: call.id,
+            content: JSON.stringify(
+              runTool(call.function.name, parseArguments(call.function.arguments)),
+            ),
+          });
+        }
         continue;
       }
 
-      const reply = content
-        .filter((b) => b.type === "text" && typeof b.text === "string")
-        .map((b) => b.text)
-        .join("\n")
-        .trim();
-
-      return Response.json({ reply: reply || "Sorry, I could not find an answer to that." });
+      const reply = (message.content ?? "").trim();
+      return Response.json({
+        reply: reply || "Sorry, I could not find an answer to that.",
+      });
     }
 
     return fail("The advisor needed too many steps for that question. Try asking it more simply.", 502);
